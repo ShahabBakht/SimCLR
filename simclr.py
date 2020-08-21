@@ -1,6 +1,8 @@
 import torch
+import time
 from models.resnet_simclr import ResNetSimCLR
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 import torch.nn.functional as F
 from loss.nt_xent import NTXentLoss
 import os
@@ -33,7 +35,7 @@ class SimCLR(object):
     def __init__(self, dataset, config):
         self.config = config
         self.device = self._get_device()
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter(logdir=os.getenv('SLURM_TMPDIR') + '/model/')
         self.dataset = dataset
         self.nt_xent_criterion = NTXentLoss(self.device, config['batch_size'], **config['loss'])
 
@@ -74,7 +76,7 @@ class SimCLR(object):
                                               opt_level='O2',
                                               keep_batchnorm_fp32=True)
 
-        model_checkpoints_folder = os.path.join(self.writer.log_dir, 'checkpoints')
+        model_checkpoints_folder = os.path.join(self.writer.logdir, 'checkpoints')
 
         # save config file
         _save_config_file(model_checkpoints_folder)
@@ -84,6 +86,7 @@ class SimCLR(object):
         best_valid_loss = np.inf
 
         for epoch_counter in range(self.config['epochs']):
+            tic = time.time()
             for (xis, xjs), _ in train_loader:
                 optimizer.zero_grad()
 
@@ -113,6 +116,12 @@ class SimCLR(object):
                     torch.save(model.state_dict(), os.path.join(model_checkpoints_folder, 'model.pth'))
 
                 self.writer.add_scalar('validation_loss', valid_loss, global_step=valid_n_iter)
+
+                print('Epoch: [{0}]\t'
+                'Val Loss: [{1:.4f}]\t'
+                'T: [{2:.2f}]'.format(
+                   epoch_counter, valid_loss, time.time()-tic))
+
                 valid_n_iter += 1
 
             # warmup for the first 10 epochs
